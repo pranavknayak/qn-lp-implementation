@@ -55,9 +55,12 @@ def generate_demands(nb_demands: int, nb_nodes: int, nb_timesteps: int, max_eprs
 
 
 
-W_adj = np.array([[0, 30, 40, 10], [60, 0, 30, 0], [0, 24, 0, 30], [10, 0, 0, 0]]) #Weight matrix for directed graph.
+# W_adj = np.array([[0, 30, 40, 10], [60, 0, 30, 0], [0, 24, 0, 30], [10, 0, 0, 0]]) #Weight matrix for directed graph.
 # D = [(0, 1, 2, 2, 3), (2, 3, 5, 0, 5)]
-D = [(0, 3, 2, 2, 3), (1, 3, 5, 0, 5)] # Demand list. (start_node, end_ndode, required_pairs, start_time, end_time)
+# D = [(0, 3, 2, 2, 3), (1, 3, 5, 0, 5)] # Demand list. (start_node, end_ndode, required_pairs, start_time, end_time)
+
+W_adj = generate_weight_matrix(nb_nodes=4, p=0.4, min_weight=5, max_weight=10)
+D = generate_demands(nb_demands=3, nb_nodes=4, nb_timesteps=6, max_eprs=10)
 
 
 P = len(D)
