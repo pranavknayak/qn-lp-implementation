@@ -47,7 +47,7 @@ def plot_graph(G):
     # Draw node labels
     nx.draw_networkx_labels(G, pos)
     # nx.draw_networkx(G)
-    plt.show()
+    plt.savefig('graph.png')
 
 labels = [i for i in range(n)]
 A2 = pd.DataFrame(W_adj, index=labels, columns=labels)
