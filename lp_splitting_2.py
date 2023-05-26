@@ -1,3 +1,5 @@
+
+#Import libraries
 import pandas as pd
 import itertools
 import numpy as np
@@ -8,9 +10,9 @@ import json
 import matplotlib as mpl
 import matplotlib.pyplot as plt
 
-import docplex
 from docplex.mp.model import Model
 from docplex.mp.vartype import VarType
+
 
 def generate_weight_matrix(nb_nodes: int, p:float, min_weight: int, max_weight: int) -> np.ndarray:
     assert nb_nodes >= 0, f"expected >=0 nodes, got {nb_nodes}"
@@ -51,161 +53,166 @@ def generate_demands(nb_demands: int, nb_nodes: int, nb_timesteps: int, max_eprs
 
     return demand_list
 
-def create_digraph(W_adj: np.ndarray) -> nx.DiGraph:
-    nb_nodes = W_adj.shape[0]
-    labels = [i for i in range(nb_nodes)]
-    W_df = pd.DataFrame(W_adj, index=labels, columns=labels)
-    G_digraph = nx.from_pandas_adjacency(W_df, create_using=nx.DiGraph())
-    return G_digraph
 
 
-def plot_digraph(G: nx.DiGraph, filename: str) -> None:
+# W_adj = np.array([[0, 30, 40, 10], [60, 0, 30, 0], [0, 24, 0, 30], [10, 0, 0, 0]]) #Weight matrix for directed graph.
+# D = [(0, 1, 2, 2, 3), (2, 3, 5, 0, 5)]
+#generate_demands(nb_demands=3, nb_nodes=2) D = [(0, 3, 2, 2, 3), (1, 3, 5, 0, 5)] # Demand list. (start_node, end_ndode, required_pairs, start_time, end_time)
+
+W_adj = generate_weight_matrix(nb_nodes=4, p=0.4, min_weight=5, max_weight=10)
+D = generate_demands(nb_demands=3, nb_nodes=4, nb_timesteps=6, max_eprs=10)
+
+
+P = len(D)
+n , e = len(W_adj), len(np.nonzero(W_adj)[0])
+print(n, e)
+T = 6
+
+A = [W_adj]*T
+
+m = Model(name='routing',log_output=False) # Creates docplex model, named 'routing', turns off console logging
+m.objective_sense = 'max' # When an objective function is added, the solver will try to maximize it
+m.parameters.threads.set(1) # The solver uses 1 thread when solving.
+
+def plot_graph(G: nx.DiGraph):
+    # Set up a plot
+    pos = nx.spring_layout(G) # Returns a dict {node_id: (x_ coord, y_coord)}, positioning nodes with edges close together
     plt.figure()
-    positions = nx.spring_layout(G)
 
-    nx.draw_networkx_nodes(G, positions)
-    nx.draw_networkx_edges(G, positions)
+    # Draw nodes
+    nx.draw_networkx_nodes(G, pos)
 
+    # Draw edges
+    nx.draw_networkx_edges(G, pos)
+
+    # Draw edge labels with weights
     edge_labels = {(u, v): d["weight"] for u, v, d in G.edges(data=True)} 
-    nx.draw_networkx_edge_labels(G, positions, edge_labels=edge_labels)
-    nx.draw_networkx_labels(G, positions)
-    plt.savefig(filename)
+    # G.edges() returns a lmportist of 3-tuples (start_node, end_node, edge_data)
+    # edge_labels is a dict of {(start_node, end_node): weight}
+    nx.draw_networkx_edge_labels(G, pos, edge_labels=edge_labels)
 
-def add_variables(model: Model, W_adj: np.ndarray, nb_demands: int, nb_timesteps: int, nb_nodes: int) -> dict:
-    variables = model.integer_var_dict([(i, t, u, v) for i in range(nb_demands) for t in range(nb_timesteps) for u in range(nb_nodes) for v in range(nb_nodes) if W_adj[u][v] != 0], name='f')
-    # DEBUG PRINTING
-    for var_key in variables:
-        print(variables[var_key].name)
-    return variables
+    # Draw node labels
+    nx.draw_networkx_labels(G, pos)
+    # nx.draw_networkx(G)
+    plt.savefig('graph.png')
 
-def define_objective(model: Model, W_adj: np.ndarray, nb_demands: int, nb_nodes:int, demand_list: list,  variables: dict) -> None:
-    objective = 0
-    for i in range(nb_demands):
-        for t in range(demand_list[i][3], demand_list[i][4] + 1, 1):
-            for v in range(nb_nodes):
-                if W_adj[demand_list[i][0]][v] != 0:
-                    # DEBUG PRINTING
-                    print((i, t, demand_list[i][0], v), variables[(i, t, demand_list[i][0], v)])
-                    objective += variables[(i, t, demand_list[i][0], v)]
-    # DEGUB PRINTING
-    # print(objective)
-    model.maximize(objective)
+labels = [i for i in range(n)]
+A2 = pd.DataFrame(W_adj, index=labels, columns=labels)
+G_base = nx.from_pandas_adjacency(A2, create_using=nx.DiGraph())
+plot_graph(G_base)
 
-def define_constraints(model: Model, W_adj: np.ndarray, nb_timesteps: int, nb_demands: int, nb_nodes: int, demand_list: list, variables: dict, nw_state: list):
+####VARIABLES####
+# creates dictionary {(i,t,u,v): decision_variable_name} where the decision_variable_name is generated as "prefix_key" where prefix is specified as 'f' here through the name parameter 
+# and the key will look like "i_t_u_v", making each value end up as "f_i_t_u_v"
+variables = m.integer_var_dict([(i, t, u, v) for i in range(P) for t in range(T) for u in range(n) for v in range(n) if W_adj[u][v] != 0], name='f')
+# print(variables)
 
-    
-    for i in range(nb_demands):
-        sum_allocated = 0
-        for t in range(demand_list[i][3], demand_list[i][4]+1, 1):
-            for v in range(nb_nodes):
-                if W_adj[demand_list[i][0]][v] != 0:
-                    sum_allocated += variables[(i, t, demand_list[i][0], v)]
-        model.add_constraint(sum_allocated == demand_list[i][2], f"outflow_src_demand_{i}_src_{demand_list[i][0]}")
-        # DEBUG PRINTING
-        print(model.get_constraint_by_name(f"outflow_src_demand_{i}_src_{demand_list[i][0]}"))
-    
-    # CONSTRAINT 2:
-    for v in range(nb_nodes):
-        for t in range(nb_timesteps):
-            inflow_v = 0
-            outflow_v = 0
-            for i in range(nb_demands):
-                if v not in (demand_list[i][0], demand_list[i][1]):
-                    for u in range(nb_nodes):
-                        if W_adj[u][v] != 0: #incoming edge u->v
-                            inflow_v += variables[(i, t, u, v)]
-    
-            for i in range(nb_demands):
-                if v not in (demand_list[i][0], demand_list[i][1]):
-                    for w in range(nb_nodes):
-                        if W_adj[v][w] != 0: #outgoing edge v->w
-                            outflow_v += variables[(i, t, v, w)]
-            # DEBUG PRINTING
-            print(f"INFLOW_V_{v}_T_{t} = {inflow_v}")
-            print(f"OUTFLOW_V_{v}_T_{t+1} = {outflow_v}")
-            model.add_constraint(inflow_v == outflow_v, f"flow_cons_node_{v}_t_{t}")
-            # DEBUG PRINTING
-            print(model.get_constraint_by_name(f"flow_cons_node_{v}_t_{t}"))
-    
-    # CONSTRAINT 3:
-    for t in range(nb_timesteps):
-        for u in range(nb_nodes):
-         for v in range(nb_nodes):
-             if W_adj[u][v] != 0:       #This is an edge
-                 sum_allocated = 0
-                 for i in range(nb_demands):
-                     sum_allocated += variables[(i, t, u, v)]
-                 model.add_constraint(sum_allocated <= nw_state[t][u][v], f"edge_capacity_{u}{v}_t_{t}")
-                 # DEBUG PRINTING
-                 print(model.get_constraint_by_name(f"edge_capacity_{u}{v}_t_{t}"))
-                 print()
-    
-    # CONSTRAINT 4:
-    for i in range(nb_demands):
-        sum_allocated = 0
-        dont_allocate_time = [t for t in range(0, nb_timesteps) if t not in range(demand_list[i][3],demand_list[i][4])]
-        print(f'dont allocate time for req: {demand_list[i]} = {dont_allocate_time}')
-        for t in dont_allocate_time:
-            for u in range(nb_nodes):
-                for v in range(nb_nodes):
-                    if W_adj[u][v] != 0: #edge u->v
-                        sum_allocated += variables[(i, t, u, v)]
-        model.add_constraint(sum_allocated == 0, 'no_allocation_bef_after_req_'+str(i))
-        # DEBUG PRINTING
-        print(model.get_constraint_by_name('no_allocation_bef_after_req_'+str(i)))
-        print()
-    
-    # CONSTRAINT 5:
+for var_key in variables:
+    print(variables[var_key].name)
 
-    for i in range(nb_demands):
-        sum_allocated = 0
-        for t in range(demand_list[i][3], demand_list[i][4]+1, 1):
-            for u in range(nb_nodes):
-                if W_adj[u][demand_list[i][1]] != 0:  #incoming edge from  u -> dest_i (D[i][1])
-                    sum_allocated += variables[(i, t, u, demand_list[i][1])]
-        model.add_constraint(sum_allocated == demand_list[i][2], 'inflow_dest_demand_'+str(i)+'_dst_'+str(demand_list[i][1]))
-        # DEBUG PRINTING
-        print(model.get_constraint_by_name('inflow_dest_demand_'+str(i)+'_dst_'+str(demand_list[i][1])))
-    
-    # CONSTRAINT 6
-    for i in range(nb_demands):
-        for t in range(demand_list[i][3], demand_list[i][4]+1, 1):
-            sum_allocated=0
-            for u in range(nb_nodes):
-                for v in range(nb_nodes):
-                    if W_adj[u][v] != 0:  #edge from  u -> v
-                        sum_allocated += variables[(i, t, u, v)]
-            model.add_constraint(sum_allocated <= demand_list[i][2], 'max_allocation_demand_'+str(i)+'_t_'+str(t))
-            print(model.get_constraint_by_name('max_allocation_demand_'+str(i)+'_t_'+str(t)))
+####OBJECTIVE####
+objective = 0
+for i in range(P):
+    for t in range(D[i][3], D[i][4]+1, 1):
+        for v in range(n):
+            if W_adj[D[i][0]][v] != 0:  #outgoing edge from src_i (D[i][0]) -> v
+                print((i, t, D[i][0], v), variables[(i, t, D[i][0], v)])
+                objective += variables[(i, t, D[i][0], v)]
+print(objective)
+m.maximize(objective)
 
+####CONSTRAINTS####
 
-def lp_solve(nb_nodes: int, edge_probability: float, min_weight: int, max_weight: int, nb_demands: int, nb_timesteps:int, max_eprs: int) -> None:
-    W_adj = generate_weight_matrix(nb_nodes=nb_nodes, p=edge_probability, min_weight=min_weight, max_weight=max_weight)
-    D = generate_demands(nb_demands=nb_demands, nb_nodes=nb_nodes, nb_timesteps=nb_timesteps, max_eprs=max_eprs)
-    network_state = [W_adj]*(nb_timesteps + 1)
+#For a demand i, sum of all flows across all paths and all time-steps leaving the source si should be exactly equal to the demand size
+for i in range(P):
+    sum_allocated = 0
+    for t in range(D[i][3], D[i][4]+1, 1):
+        for v in range(n):
+            if W_adj[D[i][0]][v] != 0:  #outgoing edge from src_i (D[i][0]) -> v
+                sum_allocated += variables[(i, t, D[i][0], v)]
+    m.add_constraint(sum_allocated == D[i][2], 'outflow_src_demand_'+str(i)+'_src_'+str(D[i][0]))
+    print(m.get_constraint_by_name('outflow_src_demand_'+str(i)+'_src_'+str(D[i][0])))
 
-    model = Model(name='routing', log_output=False)
-    model.objective_sense = 'max'
-    model.parameters.threads.set(1)
+print("DEBUG START HERE")
+print("*"*20)
+#(Flow Conservation) At the intermediate nodes, incoming flow should be equal to the outgoing flow
+for v in range(n):
+    for t in range(T-1):
+        inflow_v = 0
+        outflow_v = 0
+        for i in range(P):
+            if v not in (D[i][0], D[i][1]):
+                for u in range(n):
+                    if W_adj[u][v] != 0: #incoming edge u->v
+                        inflow_v += variables[(i, t, u, v)]
 
-    G_base = create_digraph(W_adj)
-    plot_digraph(G_base, "graph.png")
+        for i in range(P):
+            if v not in (D[i][0], D[i][1]):
+                for w in range(n):
+                    if W_adj[v][w] != 0: #outgoing edge v->w
+                        outflow_v += variables[(i, t+1, v, w)]
+        print(f"INFLOW_V_{v}_T_{t} = {inflow_v}")
+        print(f"OUTFLOW_V_{v}_T_{t+1} = {outflow_v}")
+        m.add_constraint(inflow_v == outflow_v, 'flow_cons_node_'+str(v)+'_t_'+str(t))
+        print(m.get_constraint_by_name('flow_cons_node_'+str(v)+'_t_'+str(t)))
 
-    variables = add_variables(model=model, W_adj=W_adj, nb_demands=nb_demands, nb_timesteps=nb_timesteps, nb_nodes=nb_nodes)
-    define_objective(model=model, W_adj=W_adj, nb_demands=nb_demands, nb_nodes=nb_nodes, demand_list=D, variables=variables)
-    define_constraints(model=model, W_adj=W_adj, nb_timesteps=nb_timesteps, nb_demands=nb_demands, nb_nodes=nb_nodes, demand_list=D, variables=variables, nw_state=network_state)
+print("*"*20)
+print("DEBUG END HERE")
+#(Capacity Constraints) At any time-step t, the sum of all allocations on the edge should be ≤ to the capacity of the edge:
+for t in range(T):
+    for u in range(n):
+        for v in range(n):
+            if W_adj[u][v] != 0:       #This is an edge
+                sum_allocated = 0
+                for i in range(P):
+                    sum_allocated += variables[(i, t, u, v)]
+                m.add_constraint(sum_allocated <= A[t][u][v], 'edge_capacity_'+str(u)+str(v)+'_t_'+str(t))
+                print(m.get_constraint_by_name('edge_capacity_'+str(u)+str(v)+'_t_'+str(t)))
+                print()
 
-    solution = model.solve()
-    if model is None:
-        print("ERR: Model returned None")
-        return
-    sol_json = solution.export_as_json_string()
+#For any time before STi or after ETi, no flow should be allocated to the demand i:
+for i in range(P):
+    sum_allocated = 0
+    dont_allocate_time = [t for t in range(0, T) if t not in range(D[i][3],D[i][4])]
+    print(f'dont allocate time for req: {D[i]} = {dont_allocate_time}')
+    for t in dont_allocate_time:
+        for u in range(n):
+            for v in range(n):
+                if W_adj[u][v] != 0: #edge u->v
+                    sum_allocated += variables[(i, t, u, v)]
+    m.add_constraint(sum_allocated == 0, 'no_allocation_bef_after_req_'+str(i))
+    print(m.get_constraint_by_name('no_allocation_bef_after_req_'+str(i)))
+    print()
 
-    print('----------Solution Details: -----------')
-    vars = json.loads(sol_json)['CPLEXSolution']['variables']
-    for v in vars:
-        print(v['name'], ':', v['value'])
+#At the destination node ei, the sum of all the flows across all time-steps and all incoming paths for a request i should be equal to the demand size
+for i in range(P):
+    sum_allocated = 0
+    for t in range(D[i][3], D[i][4]+1, 1):
+        for u in range(n):
+            if W_adj[u][D[i][1]] != 0:  #incoming edge from  u -> dest_i (D[i][1])
+                sum_allocated += variables[(i, t, u, D[i][1])]
+    m.add_constraint(sum_allocated == D[i][2], 'inflow_dest_demand_'+str(i)+'_dst_'+str(D[i][1]))
+    print(m.get_constraint_by_name('inflow_dest_demand_'+str(i)+'_dst_'+str(D[i][1])))
+
+#At any timestep t, the sum of all allocations for a demand should be <= |D_i|
+for i in range(P):
+    for t in range(D[i][3], D[i][4]+1, 1):
+        sum_allocated=0
+        for u in range(n):
+            for v in range(n):
+                if W_adj[u][v] != 0:  #edge from  u -> v
+                    sum_allocated += variables[(i, t, u, v)]
+        m.add_constraint(sum_allocated <= D[i][2], 'max_allocation_demand_'+str(i)+'_t_'+str(t))
+        print(m.get_constraint_by_name('max_allocation_demand_'+str(i)+'_t_'+str(t)))
 
 
-if __name__ == "__main__":
-    lp_solve(nb_nodes=4, edge_probability=0.5, min_weight=10, max_weight=20, nb_demands=3, nb_timesteps=6, max_eprs=5)
+#Solver
+solution = m.solve()
+print(type(solution))
+sol_json = solution.export_as_json_string()
+# print('----------Problem Details: -----------')
+# print(sol_json)
+print('----------Solution Details: -----------')
+vars = json.loads(sol_json)['CPLEXSolution']['variables']
+for v in vars:
+    print(v['name'], ':', v['value'])
