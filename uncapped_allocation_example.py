@@ -257,18 +257,16 @@ def compute_served(F: np.ndarray, demand_list: list) -> int:
 
 def lp_solve(nb_nodes: int, edge_probability: float, min_weight: int, max_weight: int, nb_demands: int, nb_timesteps:int, max_eprs: int, debug: bool = False) -> None:
     # TODO: uncomment the lines below
-    W_adj = generate_weight_matrix(nb_nodes=nb_nodes, p=edge_probability, min_weight=min_weight, max_weight=max_weight, debug=debug)
-    D = generate_demands(nb_demands=nb_demands, nb_nodes=nb_nodes, nb_timesteps=nb_timesteps, max_eprs=max_eprs, debug=debug)
+    # W_adj = generate_weight_matrix(nb_nodes=nb_nodes, p=edge_probability, min_weight=min_weight, max_weight=max_weight, debug=debug)
+    # D = generate_demands(nb_demands=nb_demands, nb_nodes=nb_nodes, nb_timesteps=nb_timesteps, max_eprs=max_eprs, debug=debug)
     
-    # W_adj = [[0, 0, 0, 0, 5, 5, 5],
-    #          [0, 0, 0, 0, 0, 5, 5],
-    #          [0, 0, 0, 0, 0, 5, 0],
-    #          [0, 0, 0, 0, 5, 0, 0],
-    #          [5, 0, 0, 5, 0, 0, 0],
-    #          [5, 5, 5, 0, 0, 0, 0],
-    #          [5, 5, 0, 0, 0, 0, 0]]
-    # W_adj = np.array(W_adj)
-    # D = [(0, 1, 10, 0, 2), (0, 2, 2, 0, 2), (0, 3, 2, 0, 2)]
+    W_adj = [[0, 2, 0, 0],
+             [2, 0, 2, 0],
+             [0, 2, 0, 2],
+             [0, 0, 2, 0]]
+
+    W_adj = np.array(W_adj)
+    D = [(1, 2, 5, 0, 3)]
     network_state = [W_adj]*(nb_timesteps + 1)
 
     model = Model(name='routing', log_output=False)
@@ -278,9 +276,9 @@ def lp_solve(nb_nodes: int, edge_probability: float, min_weight: int, max_weight
     G_base = create_digraph(W_adj)
     plot_digraph(G_base, "graph.png")
 
-    variables = add_variables(model=model, W_adj=W_adj, nb_demands=nb_demands, nb_timesteps=nb_timesteps, nb_nodes=nb_nodes, debug=debug)
-    define_objective(model=model, W_adj=W_adj, nb_demands=nb_demands, nb_nodes=nb_nodes, demand_list=D, variables=variables, debug=debug)
-    define_constraints(model=model, W_adj=W_adj, nb_timesteps=nb_timesteps, nb_demands=nb_demands, nb_nodes=nb_nodes, demand_list=D, variables=variables, nw_state=network_state, debug=debug)
+    variables = add_variables(model=model, W_adj=W_adj, nb_demands=1, nb_timesteps=3, nb_nodes=4, debug=debug)
+    define_objective(model=model, W_adj=W_adj, nb_demands=1, nb_nodes=4, demand_list=D, variables=variables, debug=debug)
+    define_constraints(model=model, W_adj=W_adj, nb_timesteps=3, nb_demands=1, nb_nodes=4, demand_list=D, variables=variables, nw_state=network_state, debug=debug)
 
     print("DEMANDS")
     print("------------------------------------------------------------------")
@@ -298,7 +296,7 @@ def lp_solve(nb_nodes: int, edge_probability: float, min_weight: int, max_weight
 
     print('----------Solution Details: -----------')
     vars = json.loads(sol_json)['CPLEXSolution']['variables']
-    F = generate_flow_matrix(vars, nb_demands=nb_demands, nb_timesteps=nb_timesteps, nb_nodes=nb_nodes, debug=debug)
+    F = generate_flow_matrix(vars, nb_demands=1, nb_timesteps=3, nb_nodes=4, debug=debug)
     served_count = compute_served(F, D)
 
 
