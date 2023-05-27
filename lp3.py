@@ -98,7 +98,7 @@ def define_objective(model: Model, W_adj: np.ndarray, nb_demands: int, nb_nodes:
                     if debug:
                         print((i, t, demand_list[i][0], v), variables[(i, t, demand_list[i][0], v)])
                         print()
-                    objective += variables[(i, t, demand_list[i][0], v)]
+                    objective += variables[(i, t, demand_list[i][0], v)] - variables[(i, t, v, demand_list[i][0])]
     # DEGUB PRINTING
     # print(objective)
     model.maximize(objective)
@@ -258,18 +258,18 @@ def compute_served(F: np.ndarray, demand_list: list) -> int:
 
 def lp_solve(nb_nodes: int, edge_probability: float, min_weight: int, max_weight: int, nb_demands: int, nb_timesteps:int, max_eprs: int, debug: bool = False) -> None:
     # TODO: uncomment the lines below
-    W_adj = generate_weight_matrix(nb_nodes=nb_nodes, p=edge_probability, min_weight=min_weight, max_weight=max_weight, debug=debug)
-    D = generate_demands(nb_demands=nb_demands, nb_nodes=nb_nodes, nb_timesteps=nb_timesteps, max_eprs=max_eprs, debug=debug)
+    # W_adj = generate_weight_matrix(nb_nodes=nb_nodes, p=edge_probability, min_weight=min_weight, max_weight=max_weight, debug=debug)
+    # D = generate_demands(nb_demands=nb_demands, nb_nodes=nb_nodes, nb_timesteps=nb_timesteps, max_eprs=max_eprs, debug=debug)
     
-    # W_adj = [[0, 0, 0, 0, 5, 5, 5],
-    #          [0, 0, 0, 0, 0, 5, 5],
-    #          [0, 0, 0, 0, 0, 5, 0],
-    #          [0, 0, 0, 0, 5, 0, 0],
-    #          [5, 0, 0, 5, 0, 0, 0],
-    #          [5, 5, 5, 0, 0, 0, 0],
-    #          [5, 5, 0, 0, 0, 0, 0]]
-    # W_adj = np.array(W_adj)
-    # D = [(0, 1, 10, 0, 2), (0, 2, 2, 0, 2), (0, 3, 2, 0, 2)]
+    W_adj = [[0, 0, 0, 0, 5, 5, 5],
+             [0, 0, 0, 0, 0, 5, 5],
+             [0, 0, 0, 0, 0, 5, 0],
+             [0, 0, 0, 0, 5, 0, 0],
+             [5, 0, 0, 5, 0, 0, 0],
+             [5, 5, 5, 0, 0, 0, 0],
+             [5, 5, 0, 0, 0, 0, 0]]
+    W_adj = np.array(W_adj)
+    D = [(0, 1, 10, 0, 2), (0, 2, 2, 0, 2), (0, 3, 2, 0, 2)]
     network_state = [W_adj]*(nb_timesteps + 1)
 
     model = Model(name='routing', log_output=False)
